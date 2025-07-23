@@ -1,12 +1,16 @@
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
+
 export default async function handler(req, res) {
   const targetUrl = req.query.url;
-
   if (!targetUrl || !targetUrl.startsWith("http")) {
     return res.status(400).json({ error: "Invalid or missing ?url=https://target.com" });
   }
 
   try {
-    // Siapkan headers yang aman untuk diteruskan
     const forwardedHeaders = {};
     for (const [key, value] of Object.entries(req.headers)) {
       const lowerKey = key.toLowerCase();
@@ -17,12 +21,12 @@ export default async function handler(req, res) {
       }
     }
 
-    // Force some browser-friendly headers
+    // Ganti origin & referer supaya tidak diblok
     forwardedHeaders["origin"] = "";
     forwardedHeaders["referer"] = "";
-    forwardedHeaders["user-agent"] = "Mozilla/5.0 (compatible; CryptoProxyBot/1.0)";
+    forwardedHeaders["user-agent"] = "Mozilla/5.0 (CryptoProxyBot/1.0)";
 
-    // Tangani preflight (OPTIONS)
+    // Tangani preflight OPTIONS
     if (req.method === "OPTIONS") {
       res.setHeader("Access-Control-Allow-Origin", "*");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
@@ -31,37 +35,34 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Ambil body (support text, JSON, buffer)
+    // Baca body mentah (penting untuk signature)
     let body = undefined;
     if (!["GET", "HEAD"].includes(req.method)) {
-      const contentType = req.headers["content-type"] || "";
-      if (contentType.includes("application/json")) {
-        body = JSON.stringify(req.body);
-      } else if (contentType.includes("application/x-www-form-urlencoded")) {
-        body = new URLSearchParams(req.body).toString();
-      } else {
-        body = req.body;
+      const chunks = [];
+      for await (const chunk of req) {
+        chunks.push(chunk);
       }
+      body = Buffer.concat(chunks);
     }
 
-    const fetchResponse = await fetch(targetUrl, {
+    const response = await fetch(targetUrl, {
       method: req.method,
       headers: forwardedHeaders,
       body,
     });
 
-    // Set headers dari response target
-    for (const [key, value] of fetchResponse.headers.entries()) {
+    // Salin semua header dari response target
+    for (const [key, value] of response.headers.entries()) {
       res.setHeader(key, value);
     }
 
-    // Set CORS headers
+    // Tambah header CORS agar client bisa akses
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
     res.setHeader("Access-Control-Allow-Headers", "*");
 
-    const buffer = await fetchResponse.arrayBuffer();
-    res.status(fetchResponse.status).send(Buffer.from(buffer));
+    const buffer = await response.arrayBuffer();
+    res.status(response.status).send(Buffer.from(buffer));
   } catch (err) {
     res.status(500).json({
       error: "Failed to fetch from target URL",
