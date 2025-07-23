@@ -1,5 +1,12 @@
-
 export default async function handler(req, res) {
+  // ✅ Tangani preflight CORS
+  if (req.method === 'OPTIONS') {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    return res.status(200).end();
+  }
+
   const url = req.query.url;
 
   if (!url) {
@@ -7,15 +14,18 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        'Accept': 'application/json'
+      }
+    });
+
     const data = await response.json();
 
-    // ✅ CORS HEADERS DIBUTUHKAN
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-    // ✅ Agar cache bagus (opsional)
     res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate");
 
     res.status(200).json(data);
