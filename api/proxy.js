@@ -1,64 +1,54 @@
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
-
 export default async function handler(req, res) {
   const targetUrl = req.query.url;
+
   if (!targetUrl || !targetUrl.startsWith("http")) {
     return res.status(400).json({ error: "Invalid or missing ?url=https://target.com" });
   }
 
+  // Tangani preflight OPTIONS
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+    res.status(200).end();
+    return;
+  }
+
   try {
-    const forwardedHeaders = {};
+    // Siapkan headers
+    const filteredHeaders = {};
     for (const [key, value] of Object.entries(req.headers)) {
       const lowerKey = key.toLowerCase();
-      if (
-        !["host", "x-vercel-proxy-signature", "content-length", "content-encoding"].includes(lowerKey)
-      ) {
-        forwardedHeaders[key] = value;
+      if (!["host", "x-vercel-proxy-signature", "content-length", "content-encoding"].includes(lowerKey)) {
+        filteredHeaders[key] = value;
       }
     }
 
-    // Ganti origin & referer supaya tidak diblok
-    forwardedHeaders["origin"] = "";
-    forwardedHeaders["referer"] = "";
-    forwardedHeaders["user-agent"] = "Mozilla/5.0 (CryptoProxyBot/1.0)";
+    // Paksa beberapa headers untuk keamanan dan bypass
+    filteredHeaders["origin"] = "";
+    filteredHeaders["referer"] = "";
+    filteredHeaders["user-agent"] = "Mozilla/5.0 (CryptoProxyBot/1.0)";
 
-    // Tangani preflight OPTIONS
-    if (req.method === "OPTIONS") {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
-      res.setHeader("Access-Control-Allow-Headers", "*");
-      res.status(200).end();
-      return;
-    }
-
-    // Baca body mentah (penting untuk signature)
+    // Tangani body untuk POST / PUT / PATCH
     let body = undefined;
     if (!["GET", "HEAD"].includes(req.method)) {
-      const chunks = [];
-      for await (const chunk of req) {
-        chunks.push(chunk);
-      }
-      body = Buffer.concat(chunks);
+      body = req.body;
     }
 
     const response = await fetch(targetUrl, {
       method: req.method,
-      headers: forwardedHeaders,
+      headers: filteredHeaders,
       body,
     });
 
-    // Salin semua header dari response target
+    // Set ulang semua headers dari response target
     for (const [key, value] of response.headers.entries()) {
       res.setHeader(key, value);
     }
 
-    // Tambah header CORS agar client bisa akses
+    // Tambahkan CORS header agar bisa dipanggil dari browser
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "*");
 
     const buffer = await response.arrayBuffer();
