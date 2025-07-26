@@ -9,6 +9,7 @@ export default async function handler(req, res) {
     const allowedHosts = [
       "api.binance.com",
       "api-gcp.binance.com",
+      "data-api.binance.vision",
       "api.mexc.com",
       "api.gateio.ws",
       "www.indodax.com",
