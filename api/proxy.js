@@ -1,62 +1,77 @@
 export default async function handler(req, res) {
   const targetUrl = req.query.url;
 
-  if (!targetUrl || !targetUrl.startsWith("http")) {
-    return res.status(400).json({ error: "Invalid or missing ?url=https://target.com" });
+  // Validasi URL
+  try {
+    const parsedUrl = new URL(targetUrl);
+
+    // Batasi hanya domain yang termasuk 'trusted CEX'
+    const allowedHosts = [
+      "api.binance.com",
+      "api-gcp.binance.com",
+      "api.mexc.com",
+      "api.gateio.ws",
+      "www.indodax.com",
+    ];
+
+    if (!allowedHosts.includes(parsedUrl.hostname)) {
+      return res.status(403).json({ error: "Target host not allowed" });
+    }
+  } catch {
+    return res.status(400).json({ error: "Invalid or missing ?url=https://..." });
   }
 
-  // Tangani preflight OPTIONS
+  // CORS headers
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,PATCH,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "*");
+
   if (req.method === "OPTIONS") {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "*");
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
   try {
-    // Siapkan headers
-    const filteredHeaders = {};
+    // Siapkan headers custom dari frontend
+    const forwardHeaders = {};
     for (const [key, value] of Object.entries(req.headers)) {
-      const lowerKey = key.toLowerCase();
-      if (!["host", "x-vercel-proxy-signature", "content-length", "content-encoding"].includes(lowerKey)) {
-        filteredHeaders[key] = value;
+      const lower = key.toLowerCase();
+      if (
+        ![
+          "host",
+          "content-length",
+          "x-vercel-proxy-signature",
+          "connection",
+          "accept-encoding"
+        ].includes(lower)
+      ) {
+        forwardHeaders[key] = value;
       }
     }
 
-    // Paksa beberapa headers untuk keamanan dan bypass
-    filteredHeaders["origin"] = "";
-    filteredHeaders["referer"] = "";
-    filteredHeaders["user-agent"] = "Mozilla/5.0 (CryptoProxyBot/1.0)";
+    // Paksa header tertentu
+    forwardHeaders["origin"] = "";
+    forwardHeaders["referer"] = "";
+    forwardHeaders["user-agent"] = "CryptoProxyBot/1.0";
 
-    // Tangani body untuk POST / PUT / PATCH
-    let body = undefined;
-    if (!["GET", "HEAD"].includes(req.method)) {
-      body = req.body;
-    }
-
+    // Body untuk metode selain GET/HEAD
+    const hasBody = !["GET", "HEAD"].includes(req.method);
     const response = await fetch(targetUrl, {
       method: req.method,
-      headers: filteredHeaders,
-      body,
+      headers: forwardHeaders,
+      body: hasBody ? req.body : undefined,
     });
 
-    // Set ulang semua headers dari response target
+    // Teruskan semua response header
     for (const [key, value] of response.headers.entries()) {
+      if (key.toLowerCase() === "content-encoding") continue; // hindari brotli/gzip
       res.setHeader(key, value);
     }
 
-    // Tambahkan CORS header agar bisa dipanggil dari browser
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "*");
-
+    // Kirim body response sebagai buffer
     const buffer = await response.arrayBuffer();
-    res.status(response.status).send(Buffer.from(buffer));
+    return res.status(response.status).send(Buffer.from(buffer));
   } catch (err) {
-    res.status(500).json({
-      error: "Failed to fetch from target URL",
-      detail: err.message || err.toString(),
-    });
+    console.error("Proxy error:", err);
+    return res.status(500).json({ error: "Proxy failed", detail: err.message });
   }
 }
