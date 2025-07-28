@@ -1,50 +1,41 @@
+// api/index.js
+
 export default async function handler(req, res) {
   const { url } = req.query;
 
-  if (!url) return res.status(400).json({ error: 'Missing url query' });
-
-  const targetUrl = decodeURIComponent(url);
-  const origin = req.headers.origin || '*'; // sementara '*'
-
-  // Handle Preflight
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', '*, X-MEXC-APIKEY, Content-Type');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    return res.status(200).end();
+  if (!url) {
+    return res.status(400).json({ error: 'Missing "url" query parameter' });
   }
 
-  // Filter header penting
-  const filteredHeaders = {};
-  for (const key in req.headers) {
-    if (['x-mexc-apikey', 'content-type', 'accept'].includes(key.toLowerCase())) {
-      filteredHeaders[key] = req.headers[key];
-    }
-  }
-
+  // Buat request ke URL target
   try {
-    const response = await fetch(targetUrl, {
+    const targetRes = await fetch(url, {
       method: req.method,
-      headers: filteredHeaders,
-      body: ['GET', 'HEAD'].includes(req.method) ? undefined : req.body,
+      headers: {
+        ...req.headers,
+        host: undefined,             // Hapus header yang bermasalah
+        'content-length': undefined,
+      },
+      body: ['POST', 'PUT', 'PATCH'].includes(req.method)
+        ? req.body
+        : undefined,
     });
 
-    const data = await response.arrayBuffer();
+    const data = await targetRes.arrayBuffer(); // agar bisa mengirim selain JSON juga (binary, blob, dll)
 
-    // Salin semua response headers
-    response.headers.forEach((value, key) => {
+    // Copy semua header dari targetRes ke response
+    targetRes.headers.forEach((value, key) => {
       res.setHeader(key, value);
     });
 
-    // Inject CORS header agar bisa diakses frontend
-    res.setHeader('Access-Control-Allow-Origin', origin);
+    // Tambahkan header CORS agar bisa dipakai dari browser
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', '*, X-MEXC-APIKEY, Content-Type');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Headers', '*');
 
-    res.status(response.status).send(Buffer.from(data));
+    res.status(targetRes.status).send(Buffer.from(data));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('[Proxy Error]', err);
+    res.status(500).json({ error: 'Proxy request failed', details: err.message });
   }
 }
