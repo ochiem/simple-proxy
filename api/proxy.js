@@ -1,85 +1,40 @@
+import getRawBody from 'raw-body';
+
+export const config = {
+  api: {
+    bodyParser: false, // penting agar bisa meneruskan raw body (misalnya POST json)
+  },
+};
+
 export default async function handler(req, res) {
-  // CORS agar bisa dipanggil dari browser
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,PATCH,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "*");
-
-  // Handle preflight
-  if (req.method === "OPTIONS") return res.status(200).end();
-
-  // Ambil target URL
-  const targetUrl = req.query.url;
-
+  const targetUrl = req.headers['x-target-url']; // URL tujuan wajib dikirim di header
   if (!targetUrl) {
-    return res.status(400).json({ error: "Missing ?url=" });
+    return res.status(400).json({ error: 'Missing x-target-url header' });
   }
 
   try {
-    const parsedUrl = new URL(targetUrl);
+    const method = req.method;
+    const headers = { ...req.headers };
+    delete headers.host;
+    delete headers['x-target-url']; // jangan teruskan header internal ini ke target
 
-    // ✅ KHUSUS untuk MEXC get balance
-   if (
-      parsedUrl.hostname === "api.mexc.com" &&
-      parsedUrl.pathname === "/api/v3/account"
-    ) {
-      let body = req.body;
-      if (typeof req.body === "string") {
-        body = JSON.parse(req.body); // fix parse dari frontend
-      }
-    
-      const { apiKey, secretKey } = body;
-      if (!apiKey || !secretKey) {
-        return res.status(400).json({ error: "Missing apiKey or secretKey" });
-      }
-    
-      const recvWindow = 5000;
-      const timestamp = Date.now();
-      const queryString = `recvWindow=${recvWindow}&timestamp=${timestamp}`;
-    
-      const crypto = await import("crypto");
-      const signature = crypto.createHmac("sha256", secretKey)
-        .update(queryString)
-        .digest("hex");
-    
-      const fullUrl = `${parsedUrl.origin}${parsedUrl.pathname}?${queryString}&signature=${signature}`;
-    
-      const mexcResponse = await fetch(fullUrl, {
-        method: "GET",
-        headers: {
-          "X-MEXC-APIKEY": apiKey,
-          "Accept": "application/json",
-          "User-Agent": "Mozilla/5.0",
-        },
-      });
-    
-      const json = await mexcResponse.json();
-      return res.status(mexcResponse.status).json(json);
-    }
+    const body =
+      method === 'GET' || method === 'HEAD'
+        ? undefined
+        : await getRawBody(req); // biarkan dalam bentuk Buffer
 
-
-    // 🌐 UNTUK SEMUA URL LAIN (default proxy)
-    const forwardHeaders = {
-      "User-Agent": req.headers["user-agent"] || "Mozilla/5.0",
-      "Accept": "application/json",
-    };
-
-    const hasBody = !["GET", "HEAD"].includes(req.method);
     const response = await fetch(targetUrl, {
-      method: req.method,
-      headers: forwardHeaders,
-      body: hasBody ? req.body : undefined,
+      method,
+      headers,
+      body,
     });
 
-    const buffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type');
+    res.setHeader('Content-Type', contentType || 'application/json');
     res.status(response.status);
-    response.headers.forEach((val, key) => {
-      if (key.toLowerCase() !== "content-encoding") {
-        res.setHeader(key, val);
-      }
-    });
+    const buffer = await response.arrayBuffer();
     res.send(Buffer.from(buffer));
-  } catch (err) {
-    console.error("Proxy Error:", err);
-    res.status(500).json({ error: "Proxy failed", detail: err.message });
+  } catch (error) {
+    res.status(500).json({ error: 'Proxy Error', detail: error.message });
   }
 }
