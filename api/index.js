@@ -1,42 +1,33 @@
-// File: api/index.js
-
 export default async function handler(req, res) {
   const { url } = req.query;
 
   if (!url) {
-    return res.status(400).json({ error: "Missing 'url' query parameter" });
+    return res.status(400).json({ error: 'Missing URL parameter' });
   }
 
-  if (req.method === 'OPTIONS') {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "*");
-    res.status(200).end();
-    return;
-  }
+  const targetURL = decodeURIComponent(url);
 
   try {
-    const fetchOptions = {
+    const headers = { ...req.headers };
+    delete headers.host;
+
+    const apiRes = await fetch(targetURL, {
       method: req.method,
-      headers: { ...req.headers },
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined,
-    };
+      headers,
+      body: ['GET', 'HEAD'].includes(req.method) ? undefined : req.body,
+    });
 
-    // Hapus host agar tidak bentrok dengan target
-    delete fetchOptions.headers.host;
+    // Salin header dari target API
+    const contentType = apiRes.headers.get('content-type');
+    const body = await apiRes.text();
 
-    const response = await fetch(url, fetchOptions);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    if (contentType) res.setHeader('Content-Type', contentType);
 
-    const contentType = response.headers.get('content-type') || 'application/json';
-    const buffer = await response.arrayBuffer();
-
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "*");
-    res.setHeader("Content-Type", contentType);
-
-    res.status(response.status).send(Buffer.from(buffer));
-  } catch (err) {
-    res.status(500).json({ error: 'Proxy error', details: err.message });
+    res.status(apiRes.status).send(body);
+  } catch (error) {
+    res.status(500).json({ error: 'Proxy fetch failed', detail: error.message });
   }
 }
