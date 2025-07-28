@@ -1,48 +1,43 @@
 export default async function handler(req, res) {
   const { url } = req.query;
-  const targetUrl = decodeURIComponent(url || "");
 
-  if (!url || !targetUrl.startsWith("http")) {
-    return res.status(400).json({ error: "Missing or invalid ?url=" });
-  }
+  if (!url) return res.status(400).json({ error: 'Missing url query' });
 
-  // 🛡️ Whitelist origin (tambahkan domain kamu jika ingin batasi)
-  const allowedOrigins = [
-    "http://localhost:3000",
-    "https://yourdomain.vercel.app"
-  ];
+  const targetUrl = decodeURIComponent(url);
 
-  const origin = req.headers.origin || "";
+  // ✅ Filter agar hanya domain tertentu yang boleh (opsional)
+  const allowedOrigins = ['https://yourfrontend.com']; // tambahkan domainmu
+
+  const origin = req.headers.origin || '';
   if (!allowedOrigins.includes(origin)) {
-    return res.status(403).json({ error: "Forbidden origin" });
+    return res.status(403).json({ error: 'Forbidden origin' });
   }
 
-  // 🚫 Filter headers agar tidak mengganggu server target
-  const forwardedHeaders = { ...req.headers };
-  delete forwardedHeaders["host"];
-  delete forwardedHeaders["referer"];
-  delete forwardedHeaders["origin"];
+  // 🔧 Atur header manual
+  const filteredHeaders = { ...req.headers };
+  delete filteredHeaders['host'];
+  delete filteredHeaders['referer'];
+  delete filteredHeaders['origin'];
 
   try {
     const response = await fetch(targetUrl, {
       method: req.method,
-      headers: forwardedHeaders,
-      body: ["GET", "HEAD"].includes(req.method) ? undefined : req.body,
+      headers: filteredHeaders,
+      body: ['GET', 'HEAD'].includes(req.method) ? undefined : req.body,
     });
 
-    // Clone response
     const data = await response.arrayBuffer();
 
     // Copy headers dari response target
-    for (const [key, value] of response.headers.entries()) {
+    response.headers.forEach((value, key) => {
       res.setHeader(key, value);
-    }
+    });
 
-    // ✅ Inject CORS headers ke response
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Headers", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
-    res.setHeader("Access-Control-Allow-Credentials", "true");
+    // Inject CORS Header agar frontend bisa menerima
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*, X-MEXC-APIKEY, Content-Type');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
 
     res.status(response.status).send(Buffer.from(data));
   } catch (err) {
