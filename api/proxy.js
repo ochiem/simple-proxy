@@ -1,5 +1,15 @@
 export default async function handler(req, res) {
   const { url } = req.query;
+  const origin = req.headers.origin || '*';
+
+  // Tangani preflight (CORS)
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    return res.status(200).end();
+  }
 
   if (!url) return res.status(400).json({ error: 'Missing "url" query' });
 
@@ -11,7 +21,6 @@ export default async function handler(req, res) {
         host: undefined,
         origin: undefined,
         referer: undefined,
-        'content-length': undefined
       },
       body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined,
     });
@@ -19,10 +28,10 @@ export default async function handler(req, res) {
     const contentType = targetRes.headers.get('content-type');
     const buffer = await targetRes.arrayBuffer();
 
-    // Inject CORS header yang penting
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    // CORS Header agar browser frontend bisa baca hasil
+    res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', '*, Authorization, X-MEXC-APIKEY, Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', '*');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     if (contentType) res.setHeader('Content-Type', contentType);
 
