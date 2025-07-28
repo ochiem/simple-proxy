@@ -24,8 +24,20 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Header forward: bawa semua kecuali yang bahaya
-    const forwardHeaders = {};
+    // Forward headers seperti browser
+    const forwardHeaders = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+      "Accept":
+        "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif," +
+        "image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Referer": parsedUrl.origin,
+      "Origin": parsedUrl.origin,
+    };
+
+    // Copy headers dari original request kecuali yang bahaya
     for (const [key, value] of Object.entries(req.headers)) {
       const lower = key.toLowerCase();
       if (!["host", "content-length", "connection", "accept-encoding"].includes(lower)) {
@@ -33,14 +45,9 @@ export default async function handler(req, res) {
       }
     }
 
-    // Tambahan header untuk menyamarkan asal
-    forwardHeaders["origin"] = "";
-    forwardHeaders["referer"] = "";
-    forwardHeaders["user-agent"] = "CryptoProxyBot/1.0";
-
     const hasBody = !["GET", "HEAD"].includes(req.method);
 
-    // Fetch ke target
+    // Lakukan fetch ke target
     const response = await fetch(targetUrl, {
       method: req.method,
       headers: forwardHeaders,
