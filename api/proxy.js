@@ -1,6 +1,6 @@
 export const config = {
   api: {
-    bodyParser: false, // biar bisa handle semua tipe request
+    bodyParser: false,
     externalResolver: true,
   },
 };
@@ -18,15 +18,24 @@ export default async function handler(req, res) {
       method,
       headers: {
         ...headers,
-        host: undefined, // penting: hapus header `host`
+        host: undefined, // hilangkan host agar tidak bentrok
       },
       body: ['POST', 'PUT', 'PATCH'].includes(method) ? req : undefined,
     };
 
     const response = await fetch(targetUrl, fetchOptions);
-    const contentType = response.headers.get('content-type') || '';
+    const contentType = response.headers.get('content-type') || 'application/json';
 
-    // Forward response status, headers, and body
+    // Tambahkan header CORS agar bisa diakses dari frontend
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-MEXC-APIKEY');
+
+    if (req.method === 'OPTIONS') {
+      res.status(200).end();
+      return;
+    }
+
     res.status(response.status);
     res.setHeader('Content-Type', contentType);
     const buffer = await response.arrayBuffer();
