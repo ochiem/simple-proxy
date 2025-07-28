@@ -1,43 +1,43 @@
 export default async function handler(req, res) {
-  const { url } = req.query;
-  const origin = req.headers.origin || '*';
+  const targetUrl = req.query.url;
 
-  // Tangani preflight (CORS)
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', '*');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    return res.status(200).end();
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'Missing "url" query parameter' });
   }
 
-  if (!url) return res.status(400).json({ error: 'Missing "url" query' });
+  const method = req.method;
+  const headers = { ...req.headers };
+
+  // Jangan forward headers internal Vercel
+  delete headers['host'];
+  delete headers['x-vercel-proxy-signature'];
+  delete headers['x-vercel-id'];
+  delete headers['x-forwarded-for'];
 
   try {
-    const targetRes = await fetch(decodeURIComponent(url), {
-      method: req.method,
-      headers: {
-        ...req.headers,
-        host: undefined,
-        origin: undefined,
-        referer: undefined,
-      },
-      body: ['POST', 'PUT', 'PATCH'].includes(req.method) ? req.body : undefined,
+    const fetchResponse = await fetch(targetUrl, {
+      method,
+      headers,
+      body: ['GET', 'HEAD'].includes(method) ? undefined : req.body,
     });
 
-    const contentType = targetRes.headers.get('content-type');
-    const buffer = await targetRes.arrayBuffer();
+    const contentType = fetchResponse.headers.get('content-type');
+    const body = await fetchResponse.text();
 
-    // CORS Header agar browser frontend bisa baca hasil
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Content-Type', contentType || 'text/plain');
+
+    // ✅ Tambahkan header CORS agar bisa diakses dari browser
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', '*');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    if (contentType) res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Expose-Headers', '*');
 
-    res.status(targetRes.status).send(Buffer.from(buffer));
-  } catch (err) {
-    console.error('Proxy Error:', err);
-    res.status(500).json({ error: 'Proxy request failed', details: err.message });
+    if (method === 'OPTIONS') {
+      return res.status(200).end();
+    }
+
+    res.status(fetchResponse.status).send(body);
+  } catch (error) {
+    res.status(500).json({ error: error.toString() });
   }
 }
