@@ -4,20 +4,24 @@ export default async function handler(req, res) {
   if (!url) return res.status(400).json({ error: 'Missing url query' });
 
   const targetUrl = decodeURIComponent(url);
+  const origin = req.headers.origin || '*'; // sementara '*'
 
-  // ✅ Filter agar hanya domain tertentu yang boleh (opsional)
-  const allowedOrigins = ['https://yourfrontend.com']; // tambahkan domainmu
-
-  const origin = req.headers.origin || '';
-  if (!allowedOrigins.includes(origin)) {
-    return res.status(403).json({ error: 'Forbidden origin' });
+  // Handle Preflight
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*, X-MEXC-APIKEY, Content-Type');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    return res.status(200).end();
   }
 
-  // 🔧 Atur header manual
-  const filteredHeaders = { ...req.headers };
-  delete filteredHeaders['host'];
-  delete filteredHeaders['referer'];
-  delete filteredHeaders['origin'];
+  // Filter header penting
+  const filteredHeaders = {};
+  for (const key in req.headers) {
+    if (['x-mexc-apikey', 'content-type', 'accept'].includes(key.toLowerCase())) {
+      filteredHeaders[key] = req.headers[key];
+    }
+  }
 
   try {
     const response = await fetch(targetUrl, {
@@ -28,12 +32,12 @@ export default async function handler(req, res) {
 
     const data = await response.arrayBuffer();
 
-    // Copy headers dari response target
+    // Salin semua response headers
     response.headers.forEach((value, key) => {
       res.setHeader(key, value);
     });
 
-    // Inject CORS Header agar frontend bisa menerima
+    // Inject CORS header agar bisa diakses frontend
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*, X-MEXC-APIKEY, Content-Type');
