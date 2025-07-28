@@ -1,9 +1,5 @@
 {
-  "routes": [
-    {
-      "src": "/",
-      "methods": ["GET", "POST", "OPTIONS"],
-      "dest": "/api/index.js"
-    }
+  "rewrites": [
+    { "source": "/proxy", "destination": "/api/proxy" }
   ]
 }
