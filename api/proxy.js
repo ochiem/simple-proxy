@@ -18,37 +18,44 @@ export default async function handler(req, res) {
     const parsedUrl = new URL(targetUrl);
 
     // ✅ KHUSUS untuk MEXC get balance
-    if (
+   if (
       parsedUrl.hostname === "api.mexc.com" &&
       parsedUrl.pathname === "/api/v3/account"
     ) {
-      const { apiKey, secretKey } = req.body;
+      let body = req.body;
+      if (typeof req.body === "string") {
+        body = JSON.parse(req.body); // fix parse dari frontend
+      }
+    
+      const { apiKey, secretKey } = body;
       if (!apiKey || !secretKey) {
         return res.status(400).json({ error: "Missing apiKey or secretKey" });
       }
-
+    
       const recvWindow = 5000;
       const timestamp = Date.now();
       const queryString = `recvWindow=${recvWindow}&timestamp=${timestamp}`;
-
-      const crypto = await import('crypto');
-      const signature = crypto.createHmac('sha256', secretKey)
+    
+      const crypto = await import("crypto");
+      const signature = crypto.createHmac("sha256", secretKey)
         .update(queryString)
-        .digest('hex');
-
+        .digest("hex");
+    
       const fullUrl = `${parsedUrl.origin}${parsedUrl.pathname}?${queryString}&signature=${signature}`;
-
+    
       const mexcResponse = await fetch(fullUrl, {
         method: "GET",
         headers: {
           "X-MEXC-APIKEY": apiKey,
-          "Accept": "application/json"
-        }
+          "Accept": "application/json",
+          "User-Agent": "Mozilla/5.0",
+        },
       });
-
+    
       const json = await mexcResponse.json();
       return res.status(mexcResponse.status).json(json);
     }
+
 
     // 🌐 UNTUK SEMUA URL LAIN (default proxy)
     const forwardHeaders = {
