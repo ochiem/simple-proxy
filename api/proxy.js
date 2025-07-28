@@ -1,27 +1,29 @@
-import express from 'express'
-import cors from 'cors'
-import request from 'request'
+// File: api/index.js
+export default async function handler(req, res) {
+  const target = req.query.url;
+  if (!target) return res.status(400).json({ error: 'Missing url parameter' });
 
-const app = express()
-app.use(cors())
+  // Set header CORS manual
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-MEXC-APIKEY,X-MBX-APIKEY');
 
-function parseProxyParameters(req) {
-  const params = {}
-  const urlMatch = req.url.match(/(?<=[?&])url=(?<url>.*)$/)
-  if (urlMatch) {
-    params.url = decodeURIComponent(urlMatch.groups.url)
+  if (req.method === 'OPTIONS') return res.status(200).end();
+
+  try {
+    const fetchRes = await fetch(target, {
+      method: req.method,
+      headers: {
+        ...req.headers,
+        host: new URL(target).host
+      },
+      body: ['POST','PUT','PATCH'].includes(req.method) ? req.body : undefined
+    });
+
+    const data = await fetchRes.arrayBuffer();
+    res.setHeader('Content-Type', fetchRes.headers.get('content-type') || 'application/json');
+    res.status(fetchRes.status).send(Buffer.from(data));
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to proxy', message: e.message });
   }
-  return params
 }
-
-app.all('*', (req, res) => {
-  const { url } = parseProxyParameters(req)
-  if (!url) {
-    return res.status(400).json({ error: 'Missing url parameter' })
-  }
-  const proxy = request(url)
-  req.pipe(proxy)
-  proxy.pipe(res)
-})
-
-export default app
