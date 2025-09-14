@@ -1,39 +1,45 @@
+import express from 'express';
+import cors from 'cors';
+
+const app = express();
+app.use(cors());
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
+
 export default async function handler(req, res) {
-  const targetUrl = req.query.url;
-
-  if (!targetUrl) {
-    return res.status(400).json({ error: "Missing 'url' query parameter." });
-  }
-
-  // Handle preflight request (OPTIONS)
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', '*');
-    res.status(200).end();
-    return;
-  }
-
   try {
-    const response = await fetch(targetUrl, {
+    const url = req.query.url;
+    if (!url) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      return res.status(400).json({
+        title: 'CORS Proxy Error - Required parameter is missing',
+        detail: 'The parameter: url was not provided',
+      });
+    }
+
+    const r = await fetch(url, {
       method: req.method,
       headers: {
-        'User-Agent': 'Vercel-Proxy',
-        'Content-Type': req.headers['content-type'] || 'application/json',
-        'Authorization': req.headers['authorization'] || undefined
-      }
+        'content-type': req.headers['content-type'] || undefined,
+      },
+      body:
+        req.method !== 'GET' && req.method !== 'HEAD'
+          ? JSON.stringify(req.body || {})
+          : undefined,
     });
 
-    const contentType = response.headers.get('content-type');
-    const body = await response.text();
+    const buf = await r.arrayBuffer();
 
-    res.setHeader('Content-Type', contentType || 'text/plain');
+    res.status(r.status);
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', '*');
+    if (r.headers.get('content-type'))
+      res.setHeader('Content-Type', r.headers.get('content-type'));
+    if (r.headers.get('content-encoding'))
+      res.setHeader('Content-Encoding', r.headers.get('content-encoding'));
 
-    res.status(response.status).send(body);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    return res.send(Buffer.from(buf));
+  } catch (e) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    return res.status(500).json({ title: 'Proxy Error', detail: String(e) });
   }
 }
